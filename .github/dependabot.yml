@@ -16,6 +16,10 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    ignore:
+      # A Node major also means .nvmrc, "engines" and CI; that's a deliberate change, not a bot bump.
+      - dependency-name: library/node
+        update-types: ['version-update:semver-major']
   - package-ecosystem: github-actions
     directory: /
     schedule:
