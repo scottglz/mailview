@@ -14,6 +14,8 @@ const LOGIN_TTL_MS = 10 * 60_000;
 
 export interface Session {
   sub: string;
+  /** Lowercased, and only if the provider marked it verified; null otherwise. */
+  email: string | null;
   idToken: string | null;
   expires: number;
 }
@@ -27,6 +29,19 @@ interface PendingLogin {
 }
 
 export type AuthEnv = { Variables: { session: Session } };
+
+/** The ID token's email, lowercased, only when `email_verified` is true (some providers send the string "true"). */
+export function verifiedEmail(claims: Record<string, unknown> | undefined): string | null {
+  if (!claims) return null;
+  const verified = claims.email_verified === true || claims.email_verified === 'true';
+  const email = typeof claims.email === 'string' ? claims.email.trim().toLowerCase() : '';
+  return verified && email ? email : null;
+}
+
+/** The person's label from the user list: by user id first, then by verified email. */
+export function labelOf(users: Config['users'], session: Pick<Session, 'sub' | 'email'>): string | null {
+  return users.bySub.get(session.sub) ?? (session.email ? users.byEmail.get(session.email) : undefined) ?? null;
+}
 
 function token(): string {
   return randomBytes(32).toString('base64url');
@@ -73,14 +88,14 @@ export class Auth {
 
   /** The person's label if they're set up (listed in MAILVIEW_USERS and have a key), else null. */
   labelFor(session: Session): string | null {
-    const label = this.cfg.users.get(session.sub);
+    const label = labelOf(this.cfg.users, session);
     return label && this.cfg.keys.has(label) ? label : null;
   }
 
   requireSession(): MiddlewareHandler<AuthEnv> {
     return async (c, next) => {
       if (this.cfg.demo) {
-        c.set('session', { sub: [...this.cfg.users.keys()][0], idToken: null, expires: Infinity });
+        c.set('session', { sub: [...this.cfg.users.bySub.keys()][0], email: null, idToken: null, expires: Infinity });
         return next();
       }
       const id = getCookie(c, SESSION_COOKIE);
@@ -108,7 +123,8 @@ export class Auth {
     this.cookie(c, LOGIN_COOKIE, key, LOGIN_TTL_MS / 1000);
     const url = oidc.buildAuthorizationUrl(config, {
       redirect_uri: `${this.cfg.publicUrl}/auth/callback`,
-      scope: 'openid',
+      // Email only when the list has email entries, so id-only setups still request nothing but `openid`.
+      scope: this.cfg.users.byEmail.size > 0 ? 'openid email' : 'openid',
       code_challenge: await oidc.calculatePKCECodeChallenge(login.verifier),
       code_challenge_method: 'S256',
       state: login.state,
@@ -139,16 +155,20 @@ export class Auth {
       console.warn(`sign-in failed: ${err instanceof Error ? err.name : 'error'}`);
       return c.redirect('/?signin=failed');
     }
-    const sub = String(tokens.claims()?.sub ?? '');
+    const claims = tokens.claims() as Record<string, unknown> | undefined;
+    const sub = String(claims?.sub ?? '');
     const session: Session = {
       sub,
+      email: verifiedEmail(claims),
       idToken: tokens.id_token ?? null,
       expires: Date.now() + SESSION_DAYS * 86_400_000,
     };
     const label = this.labelFor(session);
     if (label === null) {
-      // The log line gives the admin the id to add to MAILVIEW_USERS.
-      console.warn(`sign-in refused: user ${sub} is not set up (MAILVIEW_USERS + key)`);
+      // The log line gives the admin the id to add to MAILVIEW_USERS (the email isn't logged).
+      const listed = labelOf(this.cfg.users, session);
+      const why = listed ? `"${listed}" has no key` : session.email ? 'not in MAILVIEW_USERS' : 'not in MAILVIEW_USERS, no verified email';
+      console.warn(`sign-in refused: user ${sub} is not set up (${why})`);
       return c.redirect('/?signin=no-mailbox');
     }
     const id = token();

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0 - 2026-11-20
+
+- `MAILVIEW_USERS` entries can be email addresses (`alice@example.com=alice`), matched case-insensitively and only
+  when the provider marks the address verified. No more looking up a provider's user id (with Google, only a refused
+  sign-in shows it). User ids work as before; with no email entries, only the `openid` scope is requested.
+- The "sign-in refused" log line says why (not listed, no verified email, or no key) and never logs the email.
+
 ## 0.2.0 - 2026-11-14
 
 First public release.
