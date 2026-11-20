@@ -15,7 +15,8 @@ mailview is an independent project, not part of Mail-Archiver.
   key, so **Mail-Archiver decides what each person may see**, and its Access Log names the person. mailview adds no
   access rules of its own beyond "who is signed in".
 - Sign-in uses any **OpenID Connect** provider (Keycloak, Authentik, Authelia, Google, ...). An allowlist maps each
-  provider user id to a label, and each label to that person's API key. Anyone not on the list is turned away.
+  person's email address (only if the provider says it's verified) or provider user id to a label, and each label to
+  that person's API key. Anyone not on the list is turned away.
 - Email HTML is shown in a sandboxed frame with a strict Content Security Policy: scripts never run. Pictures from
   the internet are blocked until the reader asks for them, unless you set `REMOTE_IMAGES=allow`.
 - Inline (`cid:`) images and the "Original" download are read from the stored original message, so these work best
@@ -39,7 +40,7 @@ Create a confidential client (client id + secret) with:
 
 - Redirect URI: `https://<your mailview host>/auth/callback`
 - Post-logout redirect URI: `https://<your mailview host>/`
-- Scope: `openid` (nothing else is requested)
+- Scope: `openid`, plus `email` when `MAILVIEW_USERS` lists email addresses (nothing else is requested)
 
 ### 2. One Mail-Archiver user and API key per person
 
@@ -47,11 +48,12 @@ For each person:
 
 1. In Mail-Archiver, create a normal (non-admin) user and assign their mailbox(es) to it.
 2. Sign in to Mail-Archiver as that user and create an API key (API keys are per user and self-service).
-3. Find the person's user id at your OpenID Connect provider: the `sub` claim of their ID token (Keycloak: Users →
-   user → ID). If you don't know it, let them try to sign in: mailview logs
-   `sign-in refused: user <id> is not set up`.
-4. Pick a label for them (lowercase letters, digits and `-`, e.g. `alice`), add `<id>=alice` to `MAILVIEW_USERS`
-   and set `MAILVIEW_KEY_ALICE` to their key. Restart mailview.
+3. Pick a label for them (lowercase letters, digits and `-`, e.g. `alice`) and add them to `MAILVIEW_USERS`, either
+   by **email**, `alice@example.com=alice` (the address they sign in with; it must be marked verified by the
+   provider, as Google and most others do), or by **user id**, `<id>=alice` (the `sub` claim of their ID token, e.g.
+   Keycloak: Users → user → ID; if you don't know it, let them try to sign in: mailview logs
+   `sign-in refused: user <id> is not set up`).
+4. Set `MAILVIEW_KEY_ALICE` to their key. Restart mailview.
 
 ### 3. Run it
 
@@ -66,7 +68,7 @@ services:
       OIDC_ISSUER: https://auth.example.com/realms/home
       OIDC_CLIENT_ID: mailview
       MAILARCHIVER_API_URL: http://mailarchive-app:5000/api/v1
-      MAILVIEW_USERS: "3f2a1b4c-0000-4000-8000-000000000001=alice;3f2a1b4c-0000-4000-8000-000000000002=bob"
+      MAILVIEW_USERS: "alice@example.com=alice;3f2a1b4c-0000-4000-8000-000000000002=bob"
     read_only: true
     tmpfs:
       - /tmp
@@ -87,7 +89,7 @@ services:
 | `OIDC_CLIENT_ID` | yes | | |
 | `OIDC_CLIENT_SECRET` | yes | | Keep it in an env file, not in the compose file |
 | `MAILARCHIVER_API_URL` | yes | | Mail-Archiver's API base, e.g. `http://mailarchive-app:5000/api/v1` |
-| `MAILVIEW_USERS` | yes | | `<provider user id>=<label>`, `;` between people. Ids are matched exactly (case-sensitive) |
+| `MAILVIEW_USERS` | yes | | `<email or provider user id>=<label>`, `;` between people. An entry with `@` is an email: matched case-insensitively, and only when the provider marks it verified (`email_verified`). Otherwise it's the user id (`sub`), matched exactly (case-sensitive) |
 | `MAILVIEW_KEY_<LABEL>` | one per label | | That person's Mail-Archiver API key. Label in upper case, `-` becomes `_`: `family-member-1` → `MAILVIEW_KEY_FAMILY_MEMBER_1`. A person without a key can't sign in; everyone else is unaffected |
 | `APP_NAME` | | `Mail archive` | Name in the title bar and on the sign-in page |
 | `APP_TAGLINE` | | `A searchable, read-only copy of your email.` | Line under the name on the sign-in page |

@@ -9,14 +9,21 @@ export interface UiSettings {
   remoteImages: 'allow' | 'ask';
 }
 
+export interface Users {
+  /** The ID token's `sub` (matched exactly) → label. */
+  bySub: Map<string, string>;
+  /** Lowercased email (matched only when the provider says it's verified) → label. */
+  byEmail: Map<string, string>;
+}
+
 export interface Config {
   port: number;
   demo: boolean;
   publicUrl: string;
   oidc: { issuer: string; clientId: string; clientSecret: string };
   apiUrl: string;
-  /** The sign-in provider's user id (the ID token's `sub`) → that person's label, e.g. "alice". */
-  users: Map<string, string>;
+  /** Who may sign in, and their label (e.g. "alice"): by the provider's user id and/or by verified email. */
+  users: Users;
   /** Label → that person's own Mail-Archiver API key (from MAILVIEW_KEY_<LABEL>). */
   keys: Map<string, string>;
   staticDir: string;
@@ -24,24 +31,35 @@ export interface Config {
 }
 
 /**
- * MAILVIEW_USERS, e.g. "3f2a…=alice;109876543210=bob": the sign-in provider's user id (`sub`, matched exactly) and a
- * label, ";" between people. Each label needs a key in MAILVIEW_KEY_<LABEL> ("family-member-1" →
- * MAILVIEW_KEY_FAMILY_MEMBER_1): an API key created for that person's own Mail-Archiver user, so Mail-Archiver
- * decides what they may see and its access log names them.
+ * MAILVIEW_USERS, e.g. "alice@example.com=alice;3f2a…=bob": who may sign in and their label, ";" between people.
+ * Each entry is either an email address (contains "@"; matched case-insensitively, and only if the provider marks it
+ * verified) or the provider's user id (`sub`, matched exactly). Each label needs a key in MAILVIEW_KEY_<LABEL>
+ * ("family-member-1" → MAILVIEW_KEY_FAMILY_MEMBER_1): an API key created for that person's own Mail-Archiver user,
+ * so Mail-Archiver decides what they may see and its access log names them.
  */
-export function parseUsers(value: string): Map<string, string> {
-  const map = new Map<string, string>();
+export function parseUsers(value: string): Users {
+  const users: Users = { bySub: new Map(), byEmail: new Map() };
   for (const entry of value.split(';').map((s) => s.trim()).filter(Boolean)) {
     const eq = entry.lastIndexOf('=');
     if (eq <= 0) throw new Error('MAILVIEW_USERS: entry without "="');
-    const sub = entry.slice(0, eq).trim();
+    const who = entry.slice(0, eq).trim();
     const label = entry.slice(eq + 1).trim();
     // OIDC allows any ASCII string up to 255 characters; whitespace and ";" can't be written in this list anyway.
-    if (!/^[\x21-\x7e]{1,255}$/.test(sub)) throw new Error('MAILVIEW_USERS: user id must be 1-255 visible ASCII characters');
+    if (!/^[\x21-\x7e]{1,255}$/.test(who)) throw new Error('MAILVIEW_USERS: user id or email must be 1-255 visible ASCII characters');
     if (!/^[a-z0-9][a-z0-9-]{0,40}$/.test(label)) throw new Error('MAILVIEW_USERS: labels are lowercase a-z, 0-9 and "-"');
-    map.set(sub, label);
+    if (who.includes('@')) {
+      if (!/^[^@]+@[^@]+\.[^@]+$/.test(who)) throw new Error('MAILVIEW_USERS: not an email address');
+      users.byEmail.set(who.toLowerCase(), label);
+    } else {
+      users.bySub.set(who, label);
+    }
   }
-  return map;
+  return users;
+}
+
+/** All labels in the list, each once. */
+export function labels(users: Users): Set<string> {
+  return new Set([...users.bySub.values(), ...users.byEmail.values()]);
 }
 
 export function keyVariable(label: string): string {
@@ -83,7 +101,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
       publicUrl: env.PUBLIC_URL ?? `http://localhost:${port}`,
       oidc: { issuer: '', clientId: '', clientSecret: '' },
       apiUrl: '',
-      users: new Map([['00000000-0000-0000-0000-000000000000', 'demo']]),
+      users: { bySub: new Map([['00000000-0000-0000-0000-000000000000', 'demo']]), byEmail: new Map() },
       keys: new Map([['demo', 'demo']]),
       staticDir,
       ui,
@@ -93,7 +111,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
   if (!publicUrl.startsWith('https://')) throw new Error('PUBLIC_URL must be https');
   const users = parseUsers(required(env, 'MAILVIEW_USERS'));
   const keys = new Map<string, string>();
-  for (const label of new Set(users.values())) {
+  for (const label of labels(users)) {
     const key = env[keyVariable(label)]?.trim();
     // A person without a key yet can't sign in, but doesn't stop everyone else.
     if (key && !key.startsWith('change-me')) keys.set(label, key);
