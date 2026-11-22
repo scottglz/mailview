@@ -15,7 +15,9 @@ ENV NODE_ENV=production
 ENV PORT=8080
 WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
-RUN npm ci --omit=dev && npm cache clean --force
+# npm, npx, corepack and yarn come with the base image but never run here: remove them so the image carries less
+# code to patch (Trivy flags npm's bundled dependencies).
+RUN npm ci --omit=dev && npm cache clean --force  && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /opt/yarn-v*       /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg
 COPY server ./server
 COPY --from=build /app/dist ./dist
 USER node

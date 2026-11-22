@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1 - 2026-11-22
+
+- The image no longer contains npm, npx, corepack or yarn from the Node base image. Nothing used them at runtime, and
+  npm's bundled dependencies were the image's only Trivy findings.
+
 ## 0.3.0 - 2026-11-20
 
 - `MAILVIEW_USERS` entries can be email addresses (`alice@example.com=alice`), matched case-insensitively and only
