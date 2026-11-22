@@ -4,6 +4,10 @@
 
 - The image no longer contains npm, npx, corepack or yarn from the Node base image. Nothing used them at runtime, and
   npm's bundled dependencies were the image's only Trivy findings.
+- postal-mime 4.2.1 (security): deeply nested multipart messages no longer slow parsing down, and sender addresses
+  are read as RFC 5322 reads them.
+- Node 24.22.3, hono 4.13.18, @hono/node-server 2.1.8, openid-client 6.9.0; build tools vite 8.3.8 and
+  @vitejs/plugin-react 6.3.0.
 
 ## 0.3.0 - 2026-11-20
 
