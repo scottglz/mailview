@@ -1,7 +1,7 @@
 {
   "name": "mailview",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "A read-only web UI for Mail-Archiver: search, read and download archived email, one account per person.",
   "license": "MIT",
   "repository": {
